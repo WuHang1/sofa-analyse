@@ -1,5 +1,5 @@
+[toc]
 # 多Web部署
-
 ## springboot原状
 我们先从传统的springboot构建的基于内置tomcat的web应用说起。其在运行main函数初始化时，使用TomcatServletWebServerFactory#getWebServer这一工厂方法，创建了一个实现WebServer接口的TomcatWebServer实例，这里的TomcatWebServer实例就是内置tomcat的映射，包括启动、停止等方法。springboot自身基于WebServer还有jetty、netty等webserver的实现，同样有其对应的工厂方法创建。对应的工厂bean基于springboot的自动装配机制加载。
 ## 关键问题
