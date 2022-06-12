@@ -10,6 +10,7 @@
 SOFAArk基于java类加载机制，为我们提供了一种java进程内多模块隔离的方案。每个业务模块——Ark Biz，都是一个完整的springboot项目，可独立运行；也可作为一个maven依赖或远程jar包，引入被称为master Biz的基座Biz，作为一个Ark包，随着master Biz的启动合并部署运行，并由专属的BizClassLoader加载来实现隔离。
 当多个合并部署的Biz为web应用时，则面临着更多的挑战，这里我们可以对比tomcat部署多个webapp的实现，其除了各webapp之间的隔离外，还要保证tomcat众多资源的共享和管控。SOFAArk从0.6.0开始支持基于springboot embedded tomcat的多web应用合并部署，它是如何做到的，是否还继续扩展支持其它类型web容器应用，下文将会进行具体分析。
 ## 原生springboot web应用部署流程
+![springboot tomcat应用启动流程](https://github.com/WuHang1/sofa-analyse/blob/master/springboot-embedded-tomcat.png)
 我们先从传统的springboot构建的基于内置tomcat的web应用说起。其在运行main函数初始化时，使用TomcatServletWebServerFactory#getWebServer这一工厂方法，创建了一个实现WebServer接口的TomcatWebServer实例，这里的TomcatWebServer实例就是内置tomcat的映射，包括启动、停止等方法。springboot自身基于WebServer还有jetty、netty等webserver的实现，同样有其对应的工厂方法创建。对应的工厂bean基于springboot的自动装配机制加载。
 ## 改造支持多Web部署中的关键问题
 相较于单纯的springboot应用，一个Ark包的复杂之处在于，它可以包含多个Ark Biz，其中每个Ark Biz都是一个完整的springboot项目。因此使用内置tomat启动时会面临以下问题：
@@ -28,7 +29,7 @@ SOFAArk基于java类加载机制，为我们提供了一种java进程内多模�
 package com.alipay.sofa.ark.web.embed.tomcat;
 //作为ark plugin导出
 public class EmbeddedServerServiceImpl implements EmbeddedServerService<Tomcat> {
-	//共享tomcat
+    //共享tomcat
     private Tomcat tomcat;
     private Object lock = new Object();
 
@@ -40,7 +41,7 @@ public class EmbeddedServerServiceImpl implements EmbeddedServerService<Tomcat> 
     @Override
     public void setEmbedServer(Tomcat tomcat) {
         if (this.tomcat == null) {
-        	//通过加锁，避免多Web Biz并发启动加载时重复创建tomcat实例
+            //通过加锁，避免多Web Biz并发启动加载时重复创建tomcat实例
             synchronized (lock) {
                 if (this.tomcat == null) {
                     this.tomcat = tomcat;
@@ -69,10 +70,10 @@ public class ArkTomcatServletWebServerFactory extends TomcatServletWebServerFact
     @Override
     public WebServer getWebServer(ServletContextInitializer... initializers) {
         if (embeddedServerService == null) {
-        	// 未依赖web-ark-plugin插件，找不到EmbeddedServerService实现注入，与原生springboot embedded tomcat实现保持一致
+            // 未依赖web-ark-plugin插件，找不到EmbeddedServerService实现注入，与原生springboot embedded tomcat实现保持一致
             return super.getWebServer(initializers);
         } else if (embeddedServerService.getEmbedServer() == null) {
-        	// 最先启动的biz(2.0.0版本之后未master biz)运行时，tomcat实例还未创建，初始化一次
+            // 最先启动的biz(2.0.0版本之后未master biz)运行时，tomcat实例还未创建，初始化一次
             embeddedServerService.setEmbedServer(initEmbedTomcat());
         }
         // 多个biz公用同一个tomcat
@@ -108,7 +109,7 @@ package com.alipay.sofa.ark.container.service.biz;
 
 @Singleton
 public class BizFactoryServiceImpl implements BizFactoryService {
-	//基于Biz的jar包创建Biz
+    //基于Biz的jar包创建Biz
     @Override
     public Biz createBiz(BizArchive bizArchive) throws IOException {
         BizModel bizModel = new BizModel();
@@ -121,7 +122,7 @@ public class BizFactoryServiceImpl implements BizFactoryService {
             //contextPath设置
             .setWebContextPath(manifestMainAttributes.getValue(WEB_CONTEXT_PATH))
             .setClassPath(bizArchive.getUrls());
-		//专属BizClassLoader创建
+        //专属BizClassLoader创建
         BizClassLoader bizClassLoader = new BizClassLoader(bizModel.getIdentity(),
             getBizUcp(bizModel.getClassPath()), bizArchive instanceof ExplodedBizArchive
                                                 || bizArchive instanceof DirectoryBizArchive);
@@ -153,10 +154,10 @@ public class ArkTomcatServletWebServerFactory extends TomcatServletWebServerFact
         Biz biz = bizManagerService.getBizByClassLoader(Thread.currentThread()
             .getContextClassLoader());
         if (!StringUtils.isEmpty(contextPath)) {
-        	//优先使用springboot原生配置
+            //优先使用springboot原生配置
             return contextPath;
         } else if (biz != null) {
-        	//如果Biz没有配置，默认为根目录""
+            //如果Biz没有配置，默认为根目录""
             if (StringUtils.isEmpty(biz.getWebContextPath())) {
                 return ROOT_WEB_CONTEXT_PATH;
             }
@@ -168,6 +169,7 @@ public class ArkTomcatServletWebServerFactory extends TomcatServletWebServerFact
     }
 }
 ````
+![sofa-ark tomcat应用启动流程](https://github.com/WuHang1/sofa-analyse/blob/master/sofa-ark-multi-web.png)
 ## 总结
 针对合并部署这一SOFAArk主要特性，Web应用相对于普通应用，首先需要共享相同的web容器实例(tomcat、jetty、netty等)；此外需要对contextPath等Biz专属的上下文配置做好隔离；最后针对不同web容器，以插件的方式提供扩展支持。
 随着Webflux应用越来越广泛，SOFAArk后续也会按照上述思路，对其使用的netty服务器进行合并部署支持，敬请期待。
